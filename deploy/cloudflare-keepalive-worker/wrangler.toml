@@ -1,0 +1,9 @@
+name = "newtonite-keepalive-worker"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+[triggers]
+crons = ["*/12 * * * *"]
+
+[vars]
+BACKEND_HEALTH_URL = "https://your-render-app.onrender.com/api/health"

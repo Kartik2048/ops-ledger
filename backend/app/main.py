@@ -1,13 +1,16 @@
 """FastAPI Application Entrypoint.
 Initializes database schema, seeds realistic data, orchestrates background outbox worker,
 and mounts API routers.
-Stage P2: Async Outbox Worker, Seed Engine & API Wiring.
+Stage P5: Production Deployment & Free-Tier Resource Hardening.
 """
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.database import AsyncSessionLocal, Base, engine
 from app.routes import outbox, users_teams, work_items
@@ -21,7 +24,7 @@ async def lifespan(app: FastAPI):
 
     1. Ensures all relational tables and composite indexes exist.
     2. Idempotently seeds initial teams, users, and 35 realistic work items.
-    3. Launches asynchronous background Transactional Outbox worker loop.
+    3. Launches asynchronous background Transactional Outbox worker loop (event-driven).
     4. Gracefully stops background worker on shutdown.
     """
     # 1. Initialize relational schema
@@ -32,8 +35,8 @@ async def lifespan(app: FastAPI):
     async with AsyncSessionLocal() as session:
         await seed_database(session)
 
-    # 3. Start background outbox worker task
-    worker_task = asyncio.create_task(run_outbox_worker_loop(interval_seconds=3.0))
+    # 3. Start background outbox worker task (event-driven with 60s fallback timeout)
+    worker_task = asyncio.create_task(run_outbox_worker_loop(fallback_timeout=60.0))
 
     try:
         yield
@@ -54,10 +57,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS Middleware for React Vite client (port 5173 / localhost)
+# Environment-driven CORS configuration
+cors_origins_raw = os.getenv("CORS_ORIGINS", "*")
+if cors_origins_raw.strip() == "*":
+    cors_origins = ["*"]
+else:
+    cors_origins = [origin.strip() for origin in cors_origins_raw.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -76,10 +85,23 @@ app.include_router(outbox.router, prefix="/api/v1")
 
 @app.get("/api/health")
 @app.get("/api/v1/health")
+@app.get("/health")
 async def health_check():
-    """Health and readiness probe."""
+    """Health and readiness probe executing a lightweight SELECT 1 database ping.
+
+    Used by Koyeb health checks and external cron jobs to prevent cold start idle sleep.
+    """
+    db_status = "connected"
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+    except Exception as exc:
+        db_status = f"unhealthy: {str(exc)}"
+
     return {
-        "status": "healthy",
+        "status": "ok" if db_status == "connected" else "degraded",
+        "database": db_status,
         "service": "newtonite-operations-engine",
         "version": "1.0.0",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }

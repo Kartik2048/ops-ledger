@@ -98,8 +98,22 @@ async def process_outbox_batch(db: AsyncSession, batch_size: int = 25) -> dict[s
     }
 
 
-async def run_outbox_worker_loop(interval_seconds: float = 3.0):
-    """Background asyncio worker loop continuously processing outbox queue."""
+# Event-driven wakeup event for instantaneous outbox processing
+outbox_wakeup_event = asyncio.Event()
+
+
+def trigger_outbox_wakeup() -> None:
+    """Signals the outbox background worker to process pending events immediately."""
+    outbox_wakeup_event.set()
+
+
+async def run_outbox_worker_loop(fallback_timeout: float = 60.0):
+    """Event-driven background worker loop.
+    
+    Wakes up instantaneously whenever outbox_wakeup_event is set,
+    and falls back to checking every fallback_timeout seconds (default 60s)
+    to handle exponential backoff retries without wasting free-tier CPU.
+    """
     while True:
         try:
             async with AsyncSessionLocal() as db:
@@ -109,4 +123,14 @@ async def run_outbox_worker_loop(interval_seconds: float = 3.0):
         except Exception:
             # Catch transient database locks or poll exceptions without crashing worker loop
             await asyncio.sleep(1.0)
-        await asyncio.sleep(interval_seconds)
+
+        # Clear event before waiting for next trigger
+        outbox_wakeup_event.clear()
+        try:
+            await asyncio.wait_for(outbox_wakeup_event.wait(), timeout=fallback_timeout)
+        except asyncio.TimeoutError:
+            # Fallback timeout elapsed: loop checks for any retryable backoff events
+            pass
+        except asyncio.CancelledError:
+            break
+

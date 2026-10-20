@@ -43,6 +43,23 @@ export function generateUUID(): string {
   });
 }
 
+// API Base URL - Configurable via Vite environment variable
+export const API_BASE_URL: string = (
+  (import.meta.env.VITE_API_BASE_URL as string | undefined) ||
+  'http://localhost:8000/api'
+).replace(/\/+$/, '');
+
+export function buildApiUrl(path: string): string {
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path;
+  }
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  if (API_BASE_URL.endsWith('/api') && (cleanPath === '/api' || cleanPath.startsWith('/api/'))) {
+    return `${API_BASE_URL}${cleanPath.substring(4)}`;
+  }
+  return `${API_BASE_URL}${cleanPath}`;
+}
+
 interface RequestOptions extends RequestInit {
   userId?: string;
   idempotencyKey?: string;
@@ -67,7 +84,8 @@ export async function apiRequest<T>(url: string, options: RequestOptions = {}): 
     headers.set('Idempotency-Key', key);
   }
 
-  const response = await fetch(url, {
+  const fullUrl = buildApiUrl(url);
+  const response = await fetch(fullUrl, {
     ...options,
     headers,
   });
@@ -275,5 +293,10 @@ export const api = {
     return apiRequest<OutboxEventResponse>(`/api/outbox/simulate-failure${q}`, {
       method: 'POST',
     });
+  },
+
+  // Health and Keep-Alive Probe
+  checkHealth: (): Promise<{ status: string; database: string; timestamp: string }> => {
+    return apiRequest<{ status: string; database: string; timestamp: string }>('/api/health');
   },
 };

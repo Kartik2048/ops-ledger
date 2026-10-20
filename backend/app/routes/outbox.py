@@ -18,7 +18,7 @@ from app.schemas import (
     OutboxEventResponse,
     OutboxQueueSummaryResponse,
 )
-from app.worker import process_outbox_batch
+from app.worker import process_outbox_batch, trigger_outbox_wakeup
 
 router = APIRouter(prefix="/outbox", tags=["Transactional Outbox"])
 
@@ -136,6 +136,7 @@ async def simulate_outbox_failure(
     )
     db.add(event)
     await db.commit()
+    trigger_outbox_wakeup()
     await db.refresh(event)
 
     return OutboxEventResponse.model_validate(event)

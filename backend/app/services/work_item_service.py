@@ -46,6 +46,7 @@ from app.schemas import (
     WorkItemTransitionRequest,
     WorkItemUpdateRequest,
 )
+from app.worker import trigger_outbox_wakeup
 
 # Deterministic State Machine Transition Matrix
 ALLOWED_TRANSITIONS: dict[str, list[str]] = {
@@ -206,6 +207,7 @@ async def create_work_item(
     db.add(outbox)
 
     await db.commit()
+    trigger_outbox_wakeup()
     refreshed = await _get_work_item_with_relations(db, item.id)
     return WorkItemResponse.model_validate(refreshed)
 
@@ -321,6 +323,7 @@ async def claim_work_item(
     db.add(outbox)
 
     await db.commit()
+    trigger_outbox_wakeup()
     return WorkItemResponse.model_validate(refreshed)
 
 
@@ -449,6 +452,7 @@ async def transition_status(
     db.add(outbox)
 
     await db.commit()
+    trigger_outbox_wakeup()
     return WorkItemResponse.model_validate(refreshed)
 
 
@@ -553,6 +557,7 @@ async def approve_or_reject_item(
     db.add(outbox)
 
     await db.commit()
+    trigger_outbox_wakeup()
     return WorkItemResponse.model_validate(refreshed)
 
 
@@ -653,6 +658,7 @@ async def reassign_item(
     db.add(outbox)
 
     await db.commit()
+    trigger_outbox_wakeup()
     return WorkItemResponse.model_validate(refreshed)
 
 
@@ -749,6 +755,7 @@ async def update_work_item_fields(
     db.add(outbox)
 
     await db.commit()
+    trigger_outbox_wakeup()
     return WorkItemResponse.model_validate(refreshed)
 
 
@@ -793,6 +800,7 @@ async def add_comment(
     )
     db.add(outbox)
     await db.commit()
+    trigger_outbox_wakeup()
 
     return await get_work_item_detail(db, item_id)
 

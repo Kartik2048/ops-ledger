@@ -1,22 +1,58 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Header } from './components/Header';
 import { Dashboard } from './components/Dashboard';
 import { WorkItemDetail } from './components/WorkItemDetail';
 import { CreateWorkItemModal } from './components/CreateWorkItemModal';
 import { OutboxDrawer } from './components/OutboxDrawer';
 import { useUser } from './context/UserContext';
-import { AlertTriangle, CheckCircle2, Info, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Info, Loader2, X } from 'lucide-react';
+import { buildApiUrl } from './api/client';
 
 export const App: React.FC = () => {
   const { currentUser, replayMode, lastIdempotencyKey } = useUser();
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState<boolean>(false);
   const [isOutboxOpen, setIsOutboxOpen] = useState<boolean>(false);
+  const [isBackendConnecting, setIsBackendConnecting] = useState<boolean>(false);
+  const [backendReady, setBackendReady] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<{
     type: 'success' | 'info' | 'warning' | 'error';
     title: string;
     description: string;
   } | null>(null);
+
+  // Active-tab heartbeat & cold-start indicator
+  useEffect(() => {
+    let isMounted = true;
+    const coldStartTimer = setTimeout(() => {
+      if (!backendReady && isMounted) {
+        setIsBackendConnecting(true);
+      }
+    }, 1500);
+
+    const pingHealth = async () => {
+      try {
+        const healthUrl = buildApiUrl('/health');
+        const res = await fetch(healthUrl);
+        if (res.ok && isMounted) {
+          setBackendReady(true);
+          setIsBackendConnecting(false);
+        }
+      } catch {
+        // Backend still starting up or transient network glitch
+      }
+    };
+
+    pingHealth();
+    // Heartbeat every 5 minutes (300,000 ms) while tab is open to keep Render Web Service & Supabase warm
+    const interval = setInterval(pingHealth, 300000);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(coldStartTimer);
+      clearInterval(interval);
+    };
+  }, [backendReady]);
 
   const handleCreated = (newItemId: string) => {
     setSelectedItemId(newItemId);
@@ -35,6 +71,19 @@ export const App: React.FC = () => {
         onOpenCreate={() => setIsCreateOpen(true)}
         onOpenOutbox={() => setIsOutboxOpen(true)}
       />
+
+      {/* Cold-Start Connection Alert (Dismisses automatically once backend responds) */}
+      {isBackendConnecting && !backendReady && (
+        <div className="bg-sky-500/10 border-b border-sky-500/30 px-4 py-2 flex items-center justify-between text-xs text-sky-300 animate-pulse">
+          <div className="flex items-center gap-2 max-w-7xl mx-auto w-full">
+            <Loader2 className="w-4 h-4 text-sky-400 animate-spin flex-shrink-0" />
+            <span className="font-semibold">Connecting to cloud backend instance...</span>
+            <span className="text-sky-200/70 hidden sm:inline">
+              (Free-tier instances may require a brief cold start wakeup; establishing database pool connection)
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Global Banner for Active Persona / Idempotency Mode */}
       {replayMode && (

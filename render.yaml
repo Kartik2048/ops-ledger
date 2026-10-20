@@ -1,0 +1,24 @@
+# ==============================================================================
+# Render Infrastructure Blueprint: Newtonite Operations Platform Backend
+# Free Web Service (Python 3.11 / FastAPI / Uvicorn Single-Worker)
+# ==============================================================================
+
+services:
+  - type: web
+    name: newtonite-backend
+    runtime: python
+    rootDir: backend
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: DATABASE_URL
+        sync: false
+        placeholder: "postgresql+asyncpg://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres"
