@@ -110,12 +110,36 @@ The application strictly implements 6 beyond-CRUD operational correctness protoc
 ---
 
 ### Step 1: Start the Backend Service
-The backend auto-creates SQLite database tables, runs seed routines, and initializes the transactional outbox loop:
+The backend auto-creates SQLite database tables, runs seed routines, and initializes the transactional outbox loop.
 
 ```bash
 cd backend
-python -m pip install -r requirements.txt
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+
+# --- 1. Python Environment Setup & Check (.venv) ---
+# NOTE: If you are reviewing this project from a local directory/archive upload,
+# check if `backend/.venv` already exists. If cloning from a Git repository,
+# `.venv` is gitignored and needs to be created once.
+
+# Option A: If .venv does NOT exist (fresh git clone):
+python -m venv .venv
+# Activate:
+#   Windows (PowerShell): .\.venv\Scripts\Activate.ps1
+#   Windows (Command Prompt): .\.venv\Scripts\activate.bat
+#   Linux / macOS: source .venv/bin/activate
+pip install -r requirements.txt
+
+# Option B: If .venv ALREADY exists (uploaded directory bundle):
+# Simply activate:
+#   Windows (PowerShell): .\.venv\Scripts\Activate.ps1
+#   Windows (Command Prompt): .\.venv\Scripts\activate.bat
+#   Linux / macOS: source .venv/bin/activate
+
+# --- 2. Run Uvicorn Development Server ---
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+
+# Alternatively, run directly without activating:
+# Windows: .\.venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+# Linux/macOS: .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 *Backend API will run at:* `http://127.0.0.1:8000`  
 *Interactive Swagger Documentation:* `http://127.0.0.1:8000/docs`
@@ -168,11 +192,17 @@ To experience all beyond-CRUD mechanics under 2 minutes:
 
 ## Automated Test Suite Verification
 
-The backend includes a comprehensive async test suite covering contract compliance and operational edge cases:
+The backend includes a comprehensive async test suite covering contract compliance and operational edge cases, as well as a live multi-user operational conditions simulator:
 
 ```bash
 cd backend
-python -m pytest -v
+
+# Ensure virtual environment is active (or prefix with .\.venv\Scripts\ on Windows or .venv/bin/ on Unix)
+# 1. Run full 16-test automated integration suite
+pytest -v
+
+# 2. Run live multi-user operational race condition simulator
+python simulate_conditions.py
 ```
 
 ### Test Suite Execution Output

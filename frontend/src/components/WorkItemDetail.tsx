@@ -50,9 +50,23 @@ export const WorkItemDetail: React.FC<WorkItemDetailProps> = ({ itemId, onClose 
   const [actionNextAction, setActionNextAction] = useState('');
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
+  const [transitionModalError, setTransitionModalError] = useState<string | null>(null);
 
   // Stale state simulation indicator
   const [isStaleSimulated, setIsStaleSimulated] = useState(false);
+
+  // Reset modal and draft states when switching work items
+  React.useEffect(() => {
+    setActiveTab('details');
+    setCommentText('');
+    setActionReason('');
+    setActionNextAction('');
+    setTransitionModalError(null);
+    setTransitionModalOpen(false);
+    setErrorBanner(null);
+    setActiveConflict(null);
+    setIsStaleSimulated(false);
+  }, [itemId]);
 
   // Fetch full work item detail including audit logs and outbox events
   const { data: item, isLoading, refetch } = useQuery({
@@ -122,10 +136,21 @@ export const WorkItemDetail: React.FC<WorkItemDetailProps> = ({ itemId, onClose 
       setTransitionModalOpen(false);
       setActionReason('');
       setActionNextAction('');
+      setTransitionModalError(null);
       showSuccess(data._isIdempotentReplay ? 'Idempotent Replay: Cached transition response returned' : `Status changed to ${targetStatus}`);
       refetch();
     },
-    onError: handleMutationError,
+    onError: (err: any) => {
+      if (err instanceof ApiError && err.status === 409 && err.conflictDetail) {
+        setTransitionModalOpen(false);
+        setActiveConflict(err.conflictDetail);
+        setIsStaleSimulated(false);
+      } else {
+        setTransitionModalError(err.message || 'Workflow transition failed.');
+        setErrorBanner(err.message || 'Action failed.');
+        setTimeout(() => setErrorBanner(null), 6000);
+      }
+    },
   });
 
   // Mutation: Formal Approval Decision
@@ -421,6 +446,7 @@ export const WorkItemDetail: React.FC<WorkItemDetailProps> = ({ itemId, onClose 
                       <button
                         onClick={() => {
                           setTargetStatus(allowedTransitions[0]);
+                          setTransitionModalError(null);
                           setTransitionModalOpen(true);
                         }}
                         disabled={!isMemberOfOwningTeam}
@@ -550,10 +576,32 @@ export const WorkItemDetail: React.FC<WorkItemDetailProps> = ({ itemId, onClose 
       {transitionModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
           <div className="relative w-full max-w-md bg-surface-dark border border-slate-700 rounded-2xl p-6 space-y-4 shadow-2xl">
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <ArrowRight className="w-5 h-5 text-brand-400" />
-              Advance Workflow State
-            </h3>
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <ArrowRight className="w-5 h-5 text-brand-400" />
+                Advance Workflow State
+              </h3>
+              <button
+                onClick={() => {
+                  setTransitionModalError(null);
+                  setTransitionModalOpen(false);
+                }}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Error Message Displayed Directly in the Dialog */}
+            {transitionModalError && (
+              <div className="p-3 bg-rose-500/15 border border-rose-500/40 rounded-xl text-rose-300 text-xs flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 text-[11px] leading-relaxed">
+                  <strong className="block text-rose-200 font-semibold mb-0.5">Workflow Transition Blocked:</strong>
+                  {transitionModalError}
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">
@@ -561,7 +609,10 @@ export const WorkItemDetail: React.FC<WorkItemDetailProps> = ({ itemId, onClose 
               </label>
               <select
                 value={targetStatus}
-                onChange={(e) => setTargetStatus(e.target.value as WorkItemStatus)}
+                onChange={(e) => {
+                  setTargetStatus(e.target.value as WorkItemStatus);
+                  setTransitionModalError(null);
+                }}
                 className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-brand-500"
               >
                 {allowedTransitions.map((st) => (
@@ -572,6 +623,16 @@ export const WorkItemDetail: React.FC<WorkItemDetailProps> = ({ itemId, onClose 
               </select>
             </div>
 
+            {/* Warning if trying to select RESOLVED on an item that requires approval */}
+            {targetStatus === 'RESOLVED' && item.requires_approval && item.approval_status !== 'APPROVED' && (
+              <div className="p-2.5 bg-amber-500/15 border border-amber-500/30 rounded-xl text-amber-300 text-[11px] flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                <span>
+                  <strong>Approval Gate:</strong> This item requires formal approval before resolution. Transitioning to RESOLVED without prior sign-off will be rejected.
+                </span>
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">
                 Mandatory Audit Justification / Reason *
@@ -581,7 +642,10 @@ export const WorkItemDetail: React.FC<WorkItemDetailProps> = ({ itemId, onClose 
                 rows={2}
                 placeholder="Explain the technical or business rationale for this state transition..."
                 value={actionReason}
-                onChange={(e) => setActionReason(e.target.value)}
+                onChange={(e) => {
+                  setActionReason(e.target.value);
+                  if (transitionModalError) setTransitionModalError(null);
+                }}
                 className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 resize-none"
               />
             </div>
@@ -601,7 +665,10 @@ export const WorkItemDetail: React.FC<WorkItemDetailProps> = ({ itemId, onClose 
 
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
               <button
-                onClick={() => setTransitionModalOpen(false)}
+                onClick={() => {
+                  setTransitionModalError(null);
+                  setTransitionModalOpen(false);
+                }}
                 className="px-4 py-2 text-xs text-slate-400 hover:text-white"
               >
                 Cancel

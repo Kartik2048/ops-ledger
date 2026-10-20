@@ -63,12 +63,31 @@ export const CreateWorkItemModal: React.FC<CreateWorkItemModalProps> = ({
     }
   }, [teams, teamId]);
 
+  const resetForm = () => {
+    setTitle('');
+    setDescription('');
+    setCategory('CUSTOMER_ISSUE');
+    setPriority('MEDIUM');
+    setNextAction('Initial triage required');
+    setRequiresApproval(false);
+    setErrorMsg(null);
+    if (teams.length > 0) {
+      setTeamId(teams[0].id);
+    }
+  };
+
+  const handleClose = () => {
+    setErrorMsg(null);
+    onClose();
+  };
+
   const createMutation = useMutation({
     mutationFn: (payload: WorkItemCreateRequest) =>
       api.createWorkItem(payload, currentUser?.id),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['workItems'] });
       queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
+      resetForm();
       onClose();
       if (onCreated) onCreated(data.id);
     },
@@ -124,7 +143,7 @@ export const CreateWorkItemModal: React.FC<CreateWorkItemModalProps> = ({
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
           >
             <X className="w-5 h-5" />
@@ -284,7 +303,7 @@ export const CreateWorkItemModal: React.FC<CreateWorkItemModalProps> = ({
           <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="px-4 py-2 text-sm text-slate-400 hover:text-white transition"
             >
               Cancel
